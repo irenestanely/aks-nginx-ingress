@@ -143,11 +143,11 @@ The ingress, container pod should be successfully running with the volume mount 
 kubectl get pods -n <namespace>
 ```
 
-![alt text](pods.png)
+![alt text](./img/pods.png)
 
 ```bash
 kubectl describe pod <pod_name> -n <namespace>
 ```
 
-![alt text](pod.png)
+![alt text](./img/pod.png)
 
