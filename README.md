@@ -137,7 +137,7 @@ kubectl apply -f pod.yaml
 
 ### Validation 
 
-The ingress, container pod should be successfully running with the volume mount and volume.
+The ingress, container pod should be successfully running with the volume mount and volume as highlighted below.
 
 ```bash
 kubectl get pods -n <namespace>
