@@ -50,7 +50,7 @@ echo $AKS_OIDC_ISSUER
 ### Create Managed Identity
 
 ```bash
- az identity create --name <identity_name> --resource-group <resource_group_of_aks>
+az identity create --name <identity_name> --resource-group <resource_group_of_aks>
 
 export USER_ASSIGNED_CLIENT_ID="$(az identity show -g <resource_group_of_aks> --name <identity_name> --query 'clientId' -o tsv)"
 
