@@ -21,7 +21,7 @@ Please install the below in your operating system and use the same resource grou
 
 Please substitute the necessary placeholder values in the below steps
 
-### Kubeconfig Setup
+### Kubeconfig setup 
 
 ```bash
 az aks get-credentials --resource-group <resource_group_of_aks> --name <aks_cluster_name> --file ~/.kube_config
@@ -33,7 +33,7 @@ az aks get-credentials --resource-group <resource_group_of_aks> --name <aks_clus
 az aks update --enable-managed-identity --resource-group <resource_group_of_aks> --name <aks_cluster_name>
 ```
 
-### Register WorkloadIdentityPreview and enableoidcissuer
+### Register WorkloadIdentityPreview and Enableoidcissuer
 
 ```bash
 az feature register --name EnableWorkloadIdentityPreview --namespace Microsoft.ContainerService
@@ -50,7 +50,7 @@ echo $AKS_OIDC_ISSUER
 ### Create Managed Identity
 
 ```bash
- az identity create --name <identity_name> --resource-group <resource_group_of_aks>
+az identity create --name <identity_name> --resource-group <resource_group_of_aks>
 
 export USER_ASSIGNED_CLIENT_ID="$(az identity show -g <resource_group_of_aks> --name <identity_name> --query 'clientId' -o tsv)"
 
@@ -58,7 +58,7 @@ export IDENTITY_TENANT=$(az aks show --name <aks_cluster_name> --resource-group 
 
 ```
 
-### Set Access for Identity to access keyvault(created from prerequisites)
+### Set Access for Identity to access Keyvault(created from prerequisites)
 
 ```bash
 az keyvault set-policy -n <key_vault_name_from_prerequisites> --key-permissions get --spn $USER_ASSIGNED_CLIENT_ID
@@ -104,7 +104,7 @@ kubectl create ns ingress
 helm install my-release nginx-stable/nginx-ingress
 ```
 
-### Cert creation and import to azure keyvault
+### Tls cert creation and import to Azure Keyvault
 
 After the helm chart installation, follow the below steps for cert creation
 
@@ -119,7 +119,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout $KEY_PATH -out $CERT
 cat $CERT_PATH $KEY_PATH > $CERT_WITH_KEY_PATH
 ```
 
-### Import the pem file to azure keyvault
+### Import the pem file to Azure Keyvault
 
 ```bash
 az keyvault certificate import --vault-name <Your Azure Key Vault> -n <cert_name> -f $CERT_WITH_KEY_PATH
@@ -137,7 +137,7 @@ kubectl apply -f pod.yaml
 
 ### Validation 
 
-The ingress, container pod should be successfully running with the volume mount and volume.
+The ingress, container pod should be successfully running with the volume mount and volume as highlighted below.
 
 ```bash
 kubectl get pods -n <namespace>
