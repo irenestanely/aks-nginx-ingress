@@ -13,62 +13,96 @@ The Secrets Store CSI driver secrets-store.csi.k8s.io allows Kubernetes to mount
 Please install the below in your operating system and use the same resource group for the below steps
 
 1. [Helm 3](https://helm.sh/docs/intro/install/) 
-2. [AKS cluster(latest)](https://learn.microsoft.com/en-us/azure/aks/learn/quick-kubernetes-deploy-cli) 
-3. [Azure Keyvault](https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal)
+2. Azure account
+3. Azure CLI(https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
 
+If you have multiple Azure subscriptions, select the appropriate subscription ID in which the resources should be billed using the az account command.
+
+```bash
+az login 
+az account set --subscription <subscription>
 
 ## Installation 
 
 Please substitute the necessary placeholder values in the below steps
 
+### Deploy AKS Cluster 
+
+Deploy an AKS cluster using the Azure CLI that includes the following
+ * Azure AD workload identity(preview)
+ * OpenId Connect issuer
+ * Azure Keyvault secrets provider
+ 
+```bash 
+az aks create -g $RESOURCE_GROUP_NAME --name $AKS_CLUSTER_NAME \
+  --location $LOCATION \
+  --node-count $NODE_COUNT \
+  --enable-oidc-issuer \
+  --enable-workload-identity \
+  --enable-addons azure-keyvault-secrets-provider
+```  
+
+export AKS_OIDC_ISSUER="$(az aks show --resource-group $RESOURCE_GROUP_NAME --name $AKS_CLUSTER_NAME --query "oidcIssuerProfile.issuerUrl" -o tsv)"
+
 ### Kubeconfig setup 
 
 ```bash
 az aks get-credentials --resource-group <resource_group_of_aks> --name <aks_cluster_name> --file ~/.kube_config
+
+
+### Verify the Azure Key Vault Provider for Secrets Store CSI Driver installation
+
+Verify that each node in your cluster's node pool has a Secrets Store CSI Driver pod and a Secrets Store Provider Azure pod running.
+
+kubectl get pods -n kube-system -l 'app in (secrets-store-csi-driver,secrets-store-provider-azure)'
+
+NAME                                     READY   STATUS    RESTARTS   AGE
+aks-secrets-store-csi-driver-4vpkj       3/3     Running   2          4m25s
+aks-secrets-store-csi-driver-ctjq6       3/3     Running   2          4m21s
+aks-secrets-store-csi-driver-tlvlq       3/3     Running   2          4m24s
+aks-secrets-store-provider-azure-5p4nb   1/1     Running   0          4m21s
+aks-secrets-store-provider-azure-6pqmv   1/1     Running   0          4m24s
+aks-secrets-store-provider-azure-f5qlm   1/1     Running   0          4m25s
 ```
 
-### Enable Managed Identity in AKS
+### TLS cert creation 
 
-```bash
-az aks update --enable-managed-identity --resource-group <resource_group_of_aks> --name <aks_cluster_name>
-```
+export KEY_PATH="aks-ingress-tls.key"
+export CERT_NAME="aks-ingress-tls"
+export CERT_PATH="aks-ingress-tls.crt"
+export CERT_WITH_KEY_PATH="aks-ingress-tls-withkey.pem"
+export HOST_NAME="<Your Host>"
 
-### Register WorkloadIdentityPreview and Enableoidcissuer
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \    
+-out $CERT_PATH \    
+-keyout $KEY_PATH \    
+-subj "/CN=$HOST_NAME/O=$CERT_NAME"
 
-```bash
-az feature register --name EnableWorkloadIdentityPreview --namespace Microsoft.ContainerService
+cat $CERT_PATH $KEY_PATH > $CERT_WITH_KEY_PATH
 
-az provider register -n Microsoft.ContainerService
+### Import cert to Keyvault 
 
-az aks update -n <aks_cluster_name> -g <resource_group_of_aks> --enable-oidc-issuer
+az keyvault create -n $AKV_NAME -g $RESOURCE_GROUP_NAME -l $
 
-export AKS_OIDC_ISSUER="$(az aks show --resource-group <resource_group_of_aks> --name <aks_cluster_name> --query "oidcIssuerProfile.issuerUrl" -o tsv)"
+az keyvault certificate import --vault-name $AKV_NAME -n $CERT_NAME -f $CERT_WITH_KEY_PATH
 
-echo $AKS_OIDC_ISSUER
-```
+### Create an Azure Active Directory(Azure AD) workload identity and Kubernetes service account 
 
-### Create Managed Identity
-
-```bash
-az identity create --name <identity_name> --resource-group <resource_group_of_aks>
+az identity create --name <identity_name> --resource-group <resource_group_of_aks
 
 export USER_ASSIGNED_CLIENT_ID="$(az identity show -g <resource_group_of_aks> --name <identity_name> --query 'clientId' -o tsv)"
 
 export IDENTITY_TENANT=$(az aks show --name <aks_cluster_name> --resource-group <resource_group_of_aks>  --query aadProfile.tenantId -o tsv)
 
-```
+### Managed Identity access to Keyvault  
 
-### Set Access for Identity to access Keyvault(created from prerequisites)
+az keyvault set-policy -n $AKV_NAME --key-permissions get --spn $USER_ASSIGNED_CLIENT_ID
 
-```bash
-az keyvault set-policy -n <key_vault_name_from_prerequisites> --key-permissions get --spn $USER_ASSIGNED_CLIENT_ID
+az keyvault set-policy -n $AKV_NAME --secret-permissions get --spn $USER_ASSIGNED_CLIENT_ID
 
-az keyvault set-policy -n <key_vault_name_from_prerequisites> --secret-permissions get --spn $USER_ASSIGNED_CLIENT_ID
+az keyvault set-policy -n $AKV_NAME --certificate-permissions get --spn $USER_ASSIGNED_CLIENT_ID
 
-az keyvault set-policy -n <key_vault_name_from_prerequisites> --certificate-permissions get --spn $USER_ASSIGNED_CLIENT_ID
-```
-
-### AKS Service account and FederatedIdentity creation
+### AKS Service account and Configure the managed identity for token federation
 
 ```bash
 export serviceAccountName="workload-identity-sa"
