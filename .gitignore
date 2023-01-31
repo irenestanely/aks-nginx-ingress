@@ -66,6 +66,10 @@ override.tf.json
 **/.history/*
 .history/*
 
+#cert files
+*.pfx
+*.crt 
+*.key 
 #node files
 dashboard_tools/node_modules/
 dashboard_tools/package-lock.json

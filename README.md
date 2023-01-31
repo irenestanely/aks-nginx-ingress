@@ -1,6 +1,7 @@
 # AKS Cluster with Nginx Ingress Controller
 
-This contains sample specs of securing an NGINX Ingress Controller with TLS with an Azure Kubernetes Service (AKS) cluster and an Azure Key Vault (AKV) instance. For more information, see [csi-secrets-store-nginx-tls]([csi-secrets-store-nginx-tls](https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-nginx-tls)).
+This contains sample specs of securing an NGINX Ingress Controller with TLS cert accessing a hello-world application on Azure Kubernetes Service (AKS) cluster. 
+Azure Key Vault (AKV) instance is used as a secret store for tls cert and Secret Store CSI Driver is used for integrating the secret stores with Kubernetes via Container Storage Interface(CSI) volume. For more information, see [csi-secrets-store-nginx-tls]([csi-secrets-store-nginx-tls](https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-nginx-tls)).
 
 Similar to Kubernetes secrets, on pod start and restart, the Secrets Store CSI driver communicates with the provider using gRPC to retrieve the secret content from the external Secrets Store specified in the SecretProviderClass custom resource. Then the volume is mounted in the pod as tmpfs and the secret contents are written to the volume.
 
@@ -27,6 +28,14 @@ az account set --subscription <subscription>
 
 Please substitute the necessary placeholder values in the below steps
 
+### Environment variables
+
+Please set up the environmental values necessary for this setup can be added to the env.sh and ran to set the values for the session.
+
+```bash
+source ./env.sh
+```
+
 ### Deploy AKS Cluster 
 
 Deploy an AKS cluster using the Azure CLI that includes the following
@@ -48,7 +57,7 @@ export AKS_OIDC_ISSUER="$(az aks show --resource-group $RESOURCE_GROUP_NAME --na
 ### Kubeconfig setup 
 
 ```bash
-az aks get-credentials --resource-group <resource_group_of_aks> --name <aks_cluster_name> --file ~/.kube_config
+az aks get-credentials --resource-group $RESOURCE_GROUP_NAME --name $AKS_CLUSTER_NAME --file ~/.kube_config
 ```
 
 ### Verify the Azure Key Vault Provider for Secrets Store CSI Driver installation
@@ -71,7 +80,7 @@ aks-secrets-store-provider-azure-f5qlm   1/1     Running   0          4m25s
 
 ```bash
 export KEY_PATH="aks-ingress-tls.key"
-export CERT_NAME="aks-ingress-tls"
+export CERT_NAME="aks-ingress-cert"
 export CERT_PATH="aks-ingress-tls.crt"
 export CERT_WITH_KEY_PATH="aks-ingress-tls-withkey.pem"
 export HOST_NAME="<Your Host>"
@@ -95,11 +104,13 @@ az keyvault certificate import --vault-name $AKV_NAME -n $CERT_NAME -f $CERT_WIT
 ### Create an Azure Active Directory(Azure AD) workload identity and Kubernetes service account 
 
 ```bash
-az identity create --name <identity_name> --resource-group <resource_group_of_aks
+export IDENTITY_NAME = 'tlssecretidentity'
 
-export USER_ASSIGNED_CLIENT_ID="$(az identity show -g <resource_group_of_aks> --name <identity_name> --query 'clientId' -o tsv)"
+az identity create --name $IDENTITY_NAME --resource-group $RESOURCE_GROUP_NAME
 
-export IDENTITY_TENANT=$(az aks show --name <aks_cluster_name> --resource-group <resource_group_of_aks>  --query aadProfile.tenantId -o tsv)
+export USER_ASSIGNED_CLIENT_ID="$(az identity show -g $RESOURCE_GROUP_NAME --name $IDENTITY_NAME  --query 'clientId' -o tsv)"
+
+export IDENTITY_TENANT=$(az aks show --name $AKS_CLUSTER_NAME--resource-group $RESOURCE_GROUP_NAME --query aadProfile.tenantId -o tsv)
 ```
 
 ### Managed Identity access to Keyvault  
@@ -134,54 +145,56 @@ export federatedIdentityName="aksfederatedidentity"
 
 az identity federated-credential create --name $federatedIdentityName --identity-name <identity_name>  --resource-group <resource_group_of_aks> --issuer ${AKS_OIDC_ISSUER} --subject system:serviceaccount:${serviceAccountNamespace}:${serviceAccountName}
 ```
-
-### Nginx Ingress
-
-Install the below after successful aks cluster installation
-
-```bash
-# add the helm chart
-helm repo add nginx-stable https://helm.nginx.com/stable
-helm repo update
-kubectl create ns ingress
-# install the nginx ingress
-helm install my-release nginx-stable/nginx-ingress
-```
-
-### Tls cert creation and import to Azure Keyvault
-
-After the helm chart installation, follow the below steps for cert creation
-
-```bash
-KEY_PATH="aks-ingress-tls.key"
-CERT_PATH="aks-ingress-tls.crt"
-CERT_WITH_KEY_PATH="aks-ingress-tls-withkey.pem"
-HOST_NAME="<Your Host>"
-
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout $KEY_PATH -out $CERT_PATH -subj '//CN=$HOST_NAME//O=$HOST_NAME'
-
-cat $CERT_PATH $KEY_PATH > $CERT_WITH_KEY_PATH
-```
-
-### Import the pem file to Azure Keyvault
-
-```bash
-az keyvault certificate import --vault-name <Your Azure Key Vault> -n <cert_name> -f $CERT_WITH_KEY_PATH
-```
-
 ### Create secret provider class
+
+To use the Secrets Store CSI driver, create a SecretProviderClass custom resource to provide driver configurations and provider-specific parameters to the CSI driver.
+
+The Secrets Store CSI Driver secrets-store.csi.k8s.io allows Kubernetes to mount multiple secrets, keys, and certs stored in enterprise-grade external secrets stores into their pods as a volume. Once the Volume is attached, the data in it is mounted into the container’s file system.
+
+Azure Key Vault provider for Secrets Store CSI Driver allows you to get secret contents stored in an Azure Key Vault instance and use the Secrets Store CSI driver interface to mount them into Kubernetes pods.
+
+To ensure your application is using the Secrets Store CSI driver, update your deployment yaml to use the secrets-store.csi.k8s.io driver and reference the SecretProviderClass resource created in the previous step.
 
 > **_NOTE:_** Please substitute the necessary placeholder values before running the `secretproviderclass.yaml` and `pod.yaml` files.
 
 ```bash
-kubectl apply -f secretproviderclass.yaml
+kubectl apply -f ./kube-manifests/secretProviderClass/secretProviderClass.yaml
 
-kubectl apply -f pod.yaml
+#(optional) if you like to deploy a sample app using secret store
+kubectl apply -f ./sample-app.yaml
+```
+
+### Install helm ingress controller with volume mount 
+
+```bash
+source ./helm/nginx-ingress-controller-helm.sh
+```
+
+### Deploy hello-world applications and ingress
+
+```bash
+kubectl apply -f ./kube-manifests/pod/aks-helloworld-one.yaml
+kubectl apply -f ./kube-manifests/pod/aks-helloworld-two.yaml
+kubectl apply -f ./kube-manifests/ingress/hello-world-ingress.yaml
 ```
 
 ### Validation 
 
-The ingress, container pod should be successfully running with the volume mount and volume as highlighted below.
+Get the EXTERNAL-IP of the ingress from the below command
+
+```bash
+kubectl get service --namespace default --selector app.kubernetes.io/name=ingress-nginx
+```
+
+Curl to the ingress to see if its connecting(200 OK) to the app using tls. The result is as seen below
+
+```bash
+curl -v -k --resolve <host_name>:443:<external_ip_above_command> https://<host_name>
+```
+
+![alt text](./img/nginx-ingress.png)
+
+The ingress, container(sample app) pod should be successfully running with the volume mount and volume as highlighted below.
 
 ```bash
 kubectl get pods -n <namespace>
@@ -194,4 +207,3 @@ kubectl describe pod <pod_name> -n <namespace>
 ```
 
 ![alt text](./img/pod.png)
-

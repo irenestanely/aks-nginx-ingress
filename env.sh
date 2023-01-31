@@ -1,0 +1,12 @@
+export CERT_NAME=aks-ingress-cert
+export HOST_NAME=aks-ingress.eastus.cloudapp.azure.com
+export SECRET_NAME=aks-ingress-tls
+export AKV_NAME="akskeyvault112"
+export SERVICE_ACCOUNT_NAMESPACE="default"
+export SECRET_PROVIDER_CLASS="azure-sp-workload-identity"
+export VOLUME_MNT_NAME="tls-secret-store"
+export SERVICE_ACCOUNT_NAME="workload-identity-sa"
+export RESOURCE_GROUP_NAME="irenes-test"
+export AKS_CLUSTER_NAME="aks-ingress-nginx"
+export LOCATION="East US"
+export NODE_COUNT=1
