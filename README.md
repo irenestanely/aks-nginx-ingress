@@ -178,7 +178,7 @@ kubectl apply -f ./kube-manifests/pod/aks-helloworld-two.yaml
 kubectl apply -f ./kube-manifests/ingress/hello-world-ingress.yaml
 ```
 
-### Validation 
+### Validation
 
 Get the EXTERNAL-IP of the ingress from the below command
 
